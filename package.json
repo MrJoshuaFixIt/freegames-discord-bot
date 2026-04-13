@@ -1,0 +1,23 @@
+{
+  "name": "freegames-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that announces free games from Epic, Steam, GOG, Amazon Prime Gaming, and more.",
+  "main": "src/bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js",
+    "deploy-commands": "node src/deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "better-sqlite3": "^11.1.2",
+    "node-cron": "^3.0.3",
+    "node-fetch": "^3.3.2",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

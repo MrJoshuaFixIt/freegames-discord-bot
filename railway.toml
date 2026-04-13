@@ -1,0 +1,13 @@
+# railway.toml
+# Railway deployment configuration for the Free Games Discord Bot
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node src/bot.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+
+# Tell Railway this is a long-running background process (no HTTP server)
+# Set RAILWAY_HEALTHCHECK_TIMEOUT if needed
