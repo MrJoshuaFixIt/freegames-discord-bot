@@ -162,7 +162,6 @@ export async function fetchEpicFreeGames() {
 export async function fetchSteamFreeGames() {
   const games = [];
 
-  // Source 1: Featured specials — only accept discount_percent === 100 AND final_price === 0
   const specials = await safeJSON(
     'https://store.steampowered.com/api/featuredcategories?cc=US&l=en'
   );
@@ -196,7 +195,6 @@ export async function fetchSteamFreeGames() {
     });
   }
 
-  // Source 2: Store search with specials=1 AND maxprice=free
   const searchData = await safeJSON(
     'https://store.steampowered.com/search/results/?json=1&specials=1&maxprice=free&category1=998&count=20&infinite=1'
   );
@@ -292,7 +290,7 @@ export async function fetchGOGFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AMAZON PRIME GAMING
-// Their GraphQL endpoint now returns 403 from servers — scrape the public page instead
+// Their GraphQL endpoint blocks server requests — scrape the HTML page instead
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchPrimeGamingFreeGames() {
@@ -313,17 +311,14 @@ export async function fetchPrimeGamingFreeGames() {
 
     const html = await res.text();
 
-    // Amazon inlines a JSON state blob in a <script> tag
-    const stateMatch = html.match(/window\.__STORE__\s*=\s*(\{.+?\});\s*<\/script>/s)
-      ?? html.match(/type="application\/json"[^>]*>(\{"props".+?)<\/script>/s);
-
-    if (stateMatch) {
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{.+?\})<\/script>/s);
+    if (nextDataMatch) {
       try {
-        const state = JSON.parse(stateMatch[1]);
-        // Walk the nested object looking for arrays of offers
-        const offers = state?.props?.pageProps?.offers
-          ?? state?.primeGamingData?.offers
-          ?? [];
+        const state = JSON.parse(nextDataMatch[1]);
+        const offers =
+          state?.props?.pageProps?.offers ??
+          state?.props?.pageProps?.primeGamingData?.offers ??
+          [];
         for (const offer of offers) {
           const title = offer.title ?? offer.gameTitle;
           if (!title) continue;
@@ -341,7 +336,7 @@ export async function fetchPrimeGamingFreeGames() {
             multiplayer: null,
           });
         }
-      } catch (_) { /* JSON parse failed — fall through to 0 */ }
+      } catch (_) { /* parse failed */ }
     }
   } catch (err) {
     console.warn(`[Prime Gaming] error: ${err.message}`);
@@ -353,17 +348,14 @@ export async function fetchPrimeGamingFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HUMBLE BUNDLE
-// Their store API blocks all server-side requests regardless of headers.
-// Instead we use their public deals page RSS feed which is open.
+// Their store API is Cloudflare-protected — best-effort with full browser headers
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchHumbleFreeGames() {
-  // Humble exposes an open search API via their Algolia-backed endpoint
   const url =
     'https://www.humblebundle.com/store/api/search' +
     '?request=1&sort=discount&genre=free&platform=windows&page_size=20';
 
-  // Try with a full cookie-less browser profile to bypass Cloudflare
   const res = await safeFetch(url, {
     headers: {
       'User-Agent':
@@ -419,7 +411,7 @@ export async function fetchHumbleFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INDIEGALA
-// Fixed: giveaways moved to freebies.indiegala.com — parse the HTML page
+// Freebies live at freebies.indiegala.com — parse alt text from product images
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchIndieGalaFreeGames() {
@@ -438,27 +430,22 @@ export async function fetchIndieGalaFreeGames() {
 
   const html = await res.text();
   const games = [];
-
-  // The page lists game cards; each has a product title and a link
-  // Pattern: <a href="/game-slug" ...>  ...  <p class="...title...">Game Title</p>
-  const cardRegex = /href="(\/[^"]+)"[^>]*>[\s\S]*?<[^>]+class="[^"]*(?:title|name)[^"]*"[^>]*>\s*([^<]{3,80})\s*<\//gi;
   const seen = new Set();
-  let match;
 
-  while ((match = cardRegex.exec(html)) !== null) {
-    const slug = match[1].replace(/\/$/, '');
-    const title = match[2].trim();
-    if (!title || seen.has(slug)) continue;
-    // Skip nav/footer links (they're short or contain special chars)
-    if (title.length < 3 || /^(login|menu|store|giveaway|trade)/i.test(title)) continue;
-    seen.add(slug);
+  // Game titles appear as: alt="GAME TITLE product image"
+  const titleMatches = [...html.matchAll(/alt="([^"]{3,80}) product image"/gi)];
+
+  for (const m of titleMatches) {
+    const title = m[1].trim();
+    if (!title || seen.has(title.toLowerCase())) continue;
+    seen.add(title.toLowerCase());
 
     games.push({
-      id: `indiegala-${slug.replace(/\//g, '-').replace(/^-/, '')}`,
+      id: `indiegala-${slugify(title)}`,
       platform: 'IndieGala',
       platformEmoji: '🎁',
       title,
-      url: `https://freebies.indiegala.com${slug}`,
+      url: 'https://freebies.indiegala.com/',
       freeUntil: null,
       imageUrl: null,
       isUpcoming: false,
@@ -466,28 +453,6 @@ export async function fetchIndieGalaFreeGames() {
       metacritic: null,
       multiplayer: null,
     });
-  }
-
-  // Fallback: grab game names from visible text nodes near "get" buttons
-  if (games.length === 0) {
-    const titleMatches = [...html.matchAll(/alt="([^"]{3,80}) product image"/gi)];
-    for (const m of titleMatches) {
-      const title = m[1].trim();
-      if (!title) continue;
-      games.push({
-        id: `indiegala-${slugify(title)}`,
-        platform: 'IndieGala',
-        platformEmoji: '🎁',
-        title,
-        url: 'https://freebies.indiegala.com/',
-        freeUntil: null,
-        imageUrl: null,
-        isUpcoming: false,
-        rating: null,
-        metacritic: null,
-        multiplayer: null,
-      });
-    }
   }
 
   console.log(`[IndieGala] ${games.length} free game(s)`);
@@ -527,6 +492,54 @@ export async function fetchItchFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GAMERPOWER  (free public API — no key required)
+// https://www.gamerpower.com/api-read
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchGamerPowerFreeGames() {
+  const url = 'https://www.gamerpower.com/api/giveaways?platform=pc&type=game&sort-by=date';
+
+  const data = await safeJSON(url, {
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!data || !Array.isArray(data)) {
+    console.log('[GamerPower] 0 free game(s)');
+    return [];
+  }
+
+  const games = [];
+  const seen = new Set();
+
+  for (const item of data) {
+    if (item.status && item.status !== 'Active') continue;
+
+    const title = item.title;
+    if (!title || seen.has(slugify(title))) continue;
+    seen.add(slugify(title));
+
+    games.push({
+      id: `gamerpower-${item.id ?? slugify(title)}`,
+      platform: 'GamerPower',
+      platformEmoji: '⚡',
+      title,
+      url: item.open_giveaway_url ?? item.giveaway_url ?? 'https://www.gamerpower.com/giveaways',
+      freeUntil: item.end_date && item.end_date !== 'N/A' ? item.end_date : null,
+      imageUrl: item.image ?? item.thumbnail ?? null,
+      isUpcoming: false,
+      rating: null,
+      metacritic: null,
+      multiplayer: null,
+    });
+  }
+
+  console.log(`[GamerPower] ${games.length} free game(s)`);
+  return games;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Master aggregator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -534,13 +547,14 @@ export async function fetchAllFreeGames() {
   console.log('[Scrapers] Starting fetch across all platforms...');
 
   const scrapers = [
-    { name: 'Epic Games',         fn: fetchEpicFreeGames },
-    { name: 'Steam',              fn: fetchSteamFreeGames },
-    { name: 'GOG',                fn: fetchGOGFreeGames },
-    { name: 'Amazon Prime',       fn: fetchPrimeGamingFreeGames },
-    { name: 'Humble Bundle',      fn: fetchHumbleFreeGames },
-    { name: 'IndieGala',          fn: fetchIndieGalaFreeGames },
-    { name: 'Itch.io',            fn: fetchItchFreeGames },
+    { name: 'Epic Games',    fn: fetchEpicFreeGames },
+    { name: 'Steam',         fn: fetchSteamFreeGames },
+    { name: 'GOG',           fn: fetchGOGFreeGames },
+    { name: 'Amazon Prime',  fn: fetchPrimeGamingFreeGames },
+    { name: 'Humble Bundle', fn: fetchHumbleFreeGames },
+    { name: 'IndieGala',     fn: fetchIndieGalaFreeGames },
+    { name: 'Itch.io',       fn: fetchItchFreeGames },
+    { name: 'GamerPower',    fn: fetchGamerPowerFreeGames },
   ];
 
   const results = await Promise.allSettled(
