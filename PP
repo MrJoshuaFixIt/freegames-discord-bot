@@ -1,0 +1,91 @@
+🔐 Privacy Policy – Frankie the Freebie Ferret
+
+Effective Date: 4/18/2026
+
+This Privacy Policy explains how Frankie the Freebie Ferret (“the Bot”) handles user data when used in Discord servers.
+
+By using the Bot, you agree to this Privacy Policy.
+
+1. Information We Collect
+
+Frankie the Freebie Ferret collects only the minimum data required to function. This may include:
+
+Discord User ID (to identify users for commands and settings)
+Discord Server ID (to operate within servers)
+Message/Command data (only when interacting with the Bot)
+Basic usage data (such as command usage frequency for performance tracking)
+
+We do not collect:
+
+Passwords
+Payment information
+Private messages outside Bot interactions
+Sensitive personal information
+2. How We Use Information
+
+Collected data is used strictly for:
+
+Providing bot functionality (e.g., responding to commands)
+Delivering free game alerts and updates
+Preventing abuse, spam, or misuse
+Improving bot performance and stability
+
+We do not sell or rent user data.
+
+3. Data Storage
+Data is stored only as needed for bot functionality
+We keep data lightweight and minimal
+Some temporary logs may be used for debugging or error prevention
+Data may be deleted periodically or when no longer necessary
+4. Third-Party Links
+
+The Bot may provide links to third-party websites (such as game stores or giveaway pages).
+
+We are not responsible for:
+
+Third-party privacy practices
+Content on external websites
+Data collected by those sites
+
+You interact with third-party services at your own discretion.
+
+5. Data Sharing
+
+We do not sell, trade, or share user data with third parties, except when required by law or to protect the security of the Bot.
+
+6. Data Security
+
+We take reasonable steps to protect stored data, but:
+
+No system is 100% secure
+We cannot guarantee absolute protection against unauthorized access or breaches
+7. User Rights
+
+Depending on your region, you may have rights to:
+
+Request access to stored data
+Request deletion of your data
+Opt out of certain data usage where applicable
+
+To request this, contact us at the support information below.
+
+8. Data Retention
+
+We retain only necessary data for bot functionality and may delete:
+
+Inactive user data
+Old logs
+Unused settings or cached information
+9. Children’s Privacy
+
+The Bot is not intended for children under 13 (or the minimum age required by your local laws). We do not knowingly collect data from children.
+
+10. Changes to This Policy
+
+We may update this Privacy Policy at any time. Continued use of the Bot after changes means you accept the updated policy.
+
+11. Contact
+
+For questions or data requests, contact:
+
+[Your Discord Username / Support Server / Email]
