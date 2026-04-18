@@ -391,9 +391,8 @@ export async function fetchGamerPowerFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REDDIT — r/FreeGameFindings + r/Freegamestuff
-// Uses www.reddit.com JSON API with a descriptive bot User-Agent.
-// old.reddit.com now also blocks server IPs; www.reddit.com JSON still works
-// without OAuth for read-only listing endpoints.
+// Reddit JSON endpoints block unauthenticated server IPs.
+// RSS feeds (.rss) are served without auth and are not blocked.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REDDIT_EXCLUDE = [
@@ -408,52 +407,57 @@ const REDDIT_INCLUDE = [
   'prime gaming', 'key',
 ];
 
-function isValidRedditPost(post) {
-  const title = (post.title ?? '').toLowerCase();
-  const flair = (post.link_flair_text ?? '').toLowerCase();
-  const combined = title + ' ' + flair;
-
-  // Must be posted within the last 48 hours
-  const ageHours = (Date.now() / 1000 - post.created_utc) / 3600;
-  if (ageHours > 48) return false;
-
-  if (REDDIT_EXCLUDE.some(w => combined.includes(w))) return false;
-  if (!REDDIT_INCLUDE.some(w => combined.includes(w))) return false;
-
+function isValidRedditTitle(title) {
+  const t = title.toLowerCase();
+  if (REDDIT_EXCLUDE.some(w => t.includes(w))) return false;
+  if (!REDDIT_INCLUDE.some(w => t.includes(w))) return false;
   return true;
 }
 
-async function fetchSubreddit(subreddit) {
-  // www.reddit.com JSON endpoints work from server IPs without OAuth.
-  // Must use a unique descriptive User-Agent per Reddit API rules — generic
-  // browser UAs are rate-limited or blocked.
-  const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=50`;
-  const data = await safeJSON(url, {
+async function fetchSubredditRSS(subreddit) {
+  const url = `https://www.reddit.com/r/${subreddit}/new/.rss?limit=50`;
+  const res = await safeFetch(url, {
     headers: {
       'User-Agent': 'FreeGameNotifier/1.0 (Discord bot; +https://github.com/MrJoshuaFixIt/freegames-discord-bot)',
-      'Accept': 'application/json',
+      'Accept': 'application/rss+xml, application/xml, text/xml',
     },
   });
-  if (!data) return [];
+  if (!res) return [];
 
+  const xml = await res.text();
   const games = [];
-  for (const child of data?.data?.children ?? []) {
-    const post = child.data;
-    if (!post || post.stickied) continue;
-    if (!isValidRedditPost(post)) continue;
 
-    const claimUrl = (!post.is_self && post.url && !post.url.includes('reddit.com'))
-      ? post.url
-      : `https://www.reddit.com${post.permalink}`;
+  // Parse <entry> blocks from Atom RSS
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)];
+  for (const [, block] of entries) {
+    const title = (block.match(/<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/) ?? [])[1]?.trim();
+    if (!title || !isValidRedditTitle(title)) continue;
+
+    // published date for age check
+    const pubStr = (block.match(/<published>(.*?)<\/published>/) ?? [])[1];
+    if (pubStr) {
+      const ageHours = (Date.now() - new Date(pubStr).getTime()) / 3600000;
+      if (ageHours > 48) continue;
+    }
+
+    // prefer the external link inside <content>, fall back to <link>
+    const contentBlock = (block.match(/<content[^>]*>([\s\S]*?)<\/content>/) ?? [])[1] ?? '';
+    const externalLink = (contentBlock.match(/href="(https?:\/\/(?!www\.reddit\.com)[^"]+)"/) ?? [])[1];
+    const redditLink = (block.match(/<link[^>]+href="([^"]+)"/) ?? [])[1];
+    const url2 = externalLink ?? redditLink ?? `https://www.reddit.com/r/${subreddit}/new/`;
+
+    // derive a stable id from the reddit post URL
+    const idMatch = (redditLink ?? '').match(/comments\/([a-z0-9]+)\//);
+    const id = `reddit-${idMatch?.[1] ?? slugify(title).slice(0, 32)}`;
 
     games.push({
-      id: `reddit-${post.id}`,
+      id,
       platform: `Reddit r/${subreddit}`,
       platformEmoji: '🟠',
-      title: post.title.trim(),
-      url: claimUrl,
+      title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
+      url: url2,
       freeUntil: null,
-      imageUrl: post.thumbnail?.startsWith('http') ? post.thumbnail : null,
+      imageUrl: null,
       isUpcoming: false,
       rating: null, metacritic: null, multiplayer: null,
     });
@@ -468,7 +472,7 @@ export async function fetchRedditFreeGames() {
   const games = [];
 
   for (const sub of subreddits) {
-    const posts = await fetchSubreddit(sub);
+    const posts = await fetchSubredditRSS(sub);
     for (const game of posts) {
       if (seen.has(game.id)) continue;
       seen.add(game.id);
