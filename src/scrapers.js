@@ -486,6 +486,77 @@ export async function fetchRedditFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FANATICAL
+// Uses the public promotions API. freeProducts contains truly-free items
+// (min_spend of 0) as well as spend-threshold gifts. We only want the ones
+// where min_spend USD === 0 AND the product itself has price USD === 0.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchFanaticalFreeGames() {
+  const data = await safeJSON('https://www.fanatical.com/api/all-promotions/en');
+  if (!data) { console.log('[Fanatical] 0 free game(s)'); return []; }
+
+  const games = [];
+  const seen = new Set();
+  const now = Date.now();
+
+  for (const promo of data.freeProducts ?? []) {
+    // Skip spend-threshold promos (e.g. "spend $15, get a free gift")
+    if ((promo.min_spend?.USD ?? 0) > 0) continue;
+
+    const validFrom = promo.valid_from ? new Date(promo.valid_from).getTime() : 0;
+    const validUntil = promo.valid_until ? new Date(promo.valid_until).getTime() : Infinity;
+    if (now < validFrom || now > validUntil) continue;
+
+    for (const product of promo.products ?? []) {
+      // Only include actual games/dlc with price 0, skip books/non-game items
+      if (!product.name || seen.has(slugify(product.name))) continue;
+      if ((product.price?.USD ?? 1) !== 0) continue;
+      // Skip items where no game platform is enabled
+      const drm = product.drm ?? {};
+      const hasGamePlatform = drm.steam || drm.epicgames || drm.gog || drm.redeem || drm.voucher;
+      if (!hasGamePlatform && product.type !== 'game' && product.type !== 'dlc') continue;
+
+      seen.add(slugify(product.name));
+      games.push({
+        id: `fanatical-${product.slug ?? slugify(product.name)}`,
+        platform: 'Fanatical', platformEmoji: '🔥',
+        title: product.name,
+        url: `https://www.fanatical.com/en/game/${product.slug ?? slugify(product.name)}`,
+        freeUntil: promo.valid_until ?? null,
+        imageUrl: product.cover
+          ? `https://fanatical.imgix.net/product/original/${product.cover}`
+          : null,
+        isUpcoming: false, rating: null, metacritic: null, multiplayer: null,
+      });
+    }
+
+    // Some promos also embed full game details in freegames[] on the product
+    for (const product of promo.products ?? []) {
+      for (const fg of product.freegames ?? []) {
+        if (!fg.slug || seen.has(fg.slug)) continue;
+        seen.add(fg.slug);
+        const cover = fg.cover
+          ? `https://fanatical.imgix.net/product/original/${fg.cover}`
+          : null;
+        games.push({
+          id: `fanatical-${fg.slug}`,
+          platform: 'Fanatical', platformEmoji: '🔥',
+          title: fg.name ?? fg.slug,
+          url: `https://www.fanatical.com/en/game/${fg.slug}`,
+          freeUntil: promo.valid_until ?? null,
+          imageUrl: cover,
+          isUpcoming: false, rating: null, metacritic: null, multiplayer: null,
+        });
+      }
+    }
+  }
+
+  console.log(`[Fanatical] ${games.length} free game(s)`);
+  return games;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Master aggregator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -501,6 +572,7 @@ export async function fetchAllFreeGames() {
     { name: 'IndieGala',     fn: fetchIndieGalaFreeGames },
     { name: 'Itch.io',       fn: fetchItchFreeGames },
     { name: 'GamerPower',    fn: fetchGamerPowerFreeGames },
+    { name: 'Fanatical',     fn: fetchFanaticalFreeGames },
     { name: 'Reddit',        fn: fetchRedditFreeGames },
   ];
 
