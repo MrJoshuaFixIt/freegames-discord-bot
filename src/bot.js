@@ -67,7 +67,7 @@ async function registerCommands() {
 
 // ── Track uptime and last check ───────────────────────────────────────────────
 const startTime = new Date();
-let lastCheckTime = null;
+let lastCheckTime  = null;
 let lastCheckCount = 0;
 
 // ── Interactions ──────────────────────────────────────────────────────────────
@@ -130,9 +130,7 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-      // Split into pages of 10 to avoid Discord's embed character limit
-      const pages = buildSummaryEmbeds(games);
-      await interaction.editReply({ embeds: [pages[0]] });
+      await interaction.editReply({ embeds: [buildSummaryEmbed(games)] });
     } catch (err) {
       console.error('[Bot] /listgames error:', err.message);
       try {
@@ -216,11 +214,3 @@ client.login(DISCORD_TOKEN).catch(err => {
   console.error('[Bot] Login failed:', err.message);
   process.exit(1);
 });
-
-// ── Helper: split games into pages safe for Discord's embed limits ────────────
-import { buildSummaryEmbed } from './embeds.js';
-
-function buildSummaryEmbeds(games) {
-  // Build one embed per platform group, capped at 10 games each, safe character count
-  return [buildSummaryEmbed(games)];
-}
