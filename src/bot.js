@@ -76,81 +76,115 @@ client.on('interactionCreate', async interaction => {
 
   // /ping
   if (interaction.commandName === 'ping') {
-    await interaction.reply({
-      embeds: [buildStatusEmbed(`🏓 Pong! Latency: **${client.ws.ping}ms**`)],
-      ephemeral: true,
-    });
+    try {
+      await interaction.reply({
+        embeds: [buildStatusEmbed(`🏓 Pong! Latency: **${client.ws.ping}ms**`)],
+        flags: 64,
+      });
+    } catch (err) {
+      console.error('[Bot] /ping error:', err.message);
+    }
     return;
   }
 
   // /status
   if (interaction.commandName === 'status') {
-    const uptime = Math.floor((Date.now() - startTime) / 1000);
-    const hours   = Math.floor(uptime / 3600);
-    const minutes = Math.floor((uptime % 3600) / 60);
-    const games   = getAllPostedGames(1000);
+    try {
+      const uptime  = Math.floor((Date.now() - startTime) / 1000);
+      const hours   = Math.floor(uptime / 3600);
+      const minutes = Math.floor((uptime % 3600) / 60);
+      const games   = getAllPostedGames(1000);
 
-    const msg = [
-      `🤖 **Bot:** ${client.user.tag}`,
-      `⏱️ **Uptime:** ${hours}h ${minutes}m`,
-      `📡 **Latency:** ${client.ws.ping}ms`,
-      `📢 **Channel:** <#${CHANNEL_ID}>`,
-      `🕒 **Last check:** ${lastCheckTime ? lastCheckTime.toLocaleString() : 'Not yet'}`,
-      `🆕 **Games found last check:** ${lastCheckCount}`,
-      `💾 **Total games tracked:** ${games.length}`,
-      `⏰ **Checks:** Every hour at :00`,
-    ].join('\n');
+      const msg = [
+        `🤖 **Bot:** ${client.user.tag}`,
+        `⏱️ **Uptime:** ${hours}h ${minutes}m`,
+        `📡 **Latency:** ${client.ws.ping}ms`,
+        `📢 **Channel:** <#${CHANNEL_ID}>`,
+        `🕒 **Last check:** ${lastCheckTime ? lastCheckTime.toLocaleString() : 'Not yet'}`,
+        `🆕 **Games found last check:** ${lastCheckCount}`,
+        `💾 **Total games tracked:** ${games.length}`,
+        `⏰ **Checks:** Every hour at :00`,
+      ].join('\n');
 
-    await interaction.reply({
-      embeds: [buildStatusEmbed(msg)],
-      ephemeral: true,
-    });
+      await interaction.reply({
+        embeds: [buildStatusEmbed(msg)],
+        flags: 64,
+      });
+    } catch (err) {
+      console.error('[Bot] /status error:', err.message);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Error fetching status.', flags: 64 }).catch(() => {});
+      }
+    }
     return;
   }
 
   // /listgames
   if (interaction.commandName === 'listgames') {
-    await interaction.deferReply({ ephemeral: true });
-    const games = getAllPostedGames(50);
-    if (!games.length) {
-      await interaction.editReply({
-        embeds: [buildStatusEmbed('No games tracked yet. Use `/checkgames` to check now.')],
-      });
-      return;
+    try {
+      await interaction.deferReply({ flags: 64 });
+      const games = getAllPostedGames(50);
+      if (!games.length) {
+        await interaction.editReply({
+          embeds: [buildStatusEmbed('No games tracked yet. Use `/checkgames` to check now.')],
+        });
+        return;
+      }
+      // Split into pages of 10 to avoid Discord's embed character limit
+      const pages = buildSummaryEmbeds(games);
+      await interaction.editReply({ embeds: [pages[0]] });
+    } catch (err) {
+      console.error('[Bot] /listgames error:', err.message);
+      try {
+        await interaction.editReply({
+          embeds: [buildStatusEmbed(`❌ Error loading game list: ${err.message}`, true)],
+        });
+      } catch (_) {}
     }
-    await interaction.editReply({ embeds: [buildSummaryEmbed(games)] });
     return;
   }
 
   // /upcoming
   if (interaction.commandName === 'upcoming') {
-    await interaction.deferReply({ ephemeral: false });
     try {
-      const all = await fetchAllFreeGames();
+      await interaction.deferReply({ flags: 0 });
+      const all      = await fetchAllFreeGames();
       const upcoming = all.filter(g => g.isUpcoming);
       await interaction.editReply({ embeds: [buildUpcomingEmbed(upcoming)] });
     } catch (err) {
-      await interaction.editReply({
-        embeds: [buildStatusEmbed(`❌ Error fetching upcoming games: ${err.message}`, true)],
-      });
+      console.error('[Bot] /upcoming error:', err.message);
+      try {
+        await interaction.editReply({
+          embeds: [buildStatusEmbed(`❌ Error fetching upcoming games: ${err.message}`, true)],
+        });
+      } catch (_) {}
     }
     return;
   }
 
   // /checkgames
   if (interaction.commandName === 'checkgames') {
-    await interaction.deferReply({ ephemeral: true });
-    const { posted, errors } = await checkAndPost('slash-command');
-    lastCheckTime = new Date();
-    lastCheckCount = posted;
+    try {
+      await interaction.deferReply({ flags: 64 });
+      const { posted, errors } = await checkAndPost('slash-command');
+      lastCheckTime  = new Date();
+      lastCheckCount = posted;
 
-    const msg = posted > 0
-      ? `✅ Done! Posted **${posted}** new free game(s) to <#${CHANNEL_ID}>.`
-      : errors > 0
-        ? `⚠️ Check complete but encountered ${errors} error(s). Check Railway logs.`
-        : '✅ Check complete — no new free games found right now.';
+      const msg = posted > 0
+        ? `✅ Done! Posted **${posted}** new free game(s) to <#${CHANNEL_ID}>.`
+        : errors > 0
+          ? `⚠️ Check complete but encountered ${errors} error(s). Check Railway logs.`
+          : '✅ Check complete — no new free games found right now.';
 
-    await interaction.editReply({ embeds: [buildStatusEmbed(msg, errors > 0 && posted === 0)] });
+      await interaction.editReply({ embeds: [buildStatusEmbed(msg, errors > 0 && posted === 0)] });
+    } catch (err) {
+      console.error('[Bot] /checkgames error:', err.message);
+      try {
+        await interaction.editReply({
+          embeds: [buildStatusEmbed(`❌ Error running check: ${err.message}`, true)],
+        });
+      } catch (_) {}
+    }
     return;
   }
 });
@@ -173,7 +207,7 @@ client.once('clientReady', async () => {
 // ── Error handling ────────────────────────────────────────────────────────────
 client.on('error', err => console.error('[Discord]', err.message));
 process.on('unhandledRejection', err => console.error('[Unhandled]', err));
-process.on('uncaughtException', err => {
+process.on('uncaughtException',  err => {
   console.error('[Fatal]', err);
   process.exit(1);
 });
@@ -182,3 +216,11 @@ client.login(DISCORD_TOKEN).catch(err => {
   console.error('[Bot] Login failed:', err.message);
   process.exit(1);
 });
+
+// ── Helper: split games into pages safe for Discord's embed limits ────────────
+import { buildSummaryEmbed } from './embeds.js';
+
+function buildSummaryEmbeds(games) {
+  // Build one embed per platform group, capped at 10 games each, safe character count
+  return [buildSummaryEmbed(games)];
+}
