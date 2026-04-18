@@ -101,7 +101,6 @@ export async function fetchEpicFreeGames() {
     const promos = item.promotions;
     if (!promos) continue;
 
-    // Currently free
     const current = promos.promotionalOffers?.[0]?.promotionalOffers ?? [];
     for (const offer of current) {
       if (offer.discountSetting?.discountPercentage !== 0) continue;
@@ -126,7 +125,6 @@ export async function fetchEpicFreeGames() {
       });
     }
 
-    // Upcoming free
     const upcoming = promos.upcomingPromotionalOffers?.[0]?.promotionalOffers ?? [];
     for (const offer of upcoming) {
       const slug =
@@ -156,7 +154,7 @@ export async function fetchEpicFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEAM  — strict 100% off check on two endpoints
+// STEAM
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSteamFreeGames() {
@@ -290,7 +288,6 @@ export async function fetchGOGFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AMAZON PRIME GAMING
-// Their GraphQL endpoint blocks server requests — scrape the HTML page instead
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchPrimeGamingFreeGames() {
@@ -310,7 +307,6 @@ export async function fetchPrimeGamingFreeGames() {
     }
 
     const html = await res.text();
-
     const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{.+?\})<\/script>/s);
     if (nextDataMatch) {
       try {
@@ -336,7 +332,7 @@ export async function fetchPrimeGamingFreeGames() {
             multiplayer: null,
           });
         }
-      } catch (_) { /* parse failed */ }
+      } catch (_) {}
     }
   } catch (err) {
     console.warn(`[Prime Gaming] error: ${err.message}`);
@@ -348,7 +344,6 @@ export async function fetchPrimeGamingFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HUMBLE BUNDLE
-// Their store API is Cloudflare-protected — best-effort with full browser headers
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchHumbleFreeGames() {
@@ -411,7 +406,6 @@ export async function fetchHumbleFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INDIEGALA
-// Freebies live at freebies.indiegala.com — parse alt text from product images
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchIndieGalaFreeGames() {
@@ -432,9 +426,7 @@ export async function fetchIndieGalaFreeGames() {
   const games = [];
   const seen = new Set();
 
-  // Game titles appear as: alt="GAME TITLE product image"
   const titleMatches = [...html.matchAll(/alt="([^"]{3,80}) product image"/gi)];
-
   for (const m of titleMatches) {
     const title = m[1].trim();
     if (!title || seen.has(title.toLowerCase())) continue;
@@ -460,7 +452,7 @@ export async function fetchIndieGalaFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ITCH.IO  (100% off sales)
+// ITCH.IO
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchItchFreeGames() {
@@ -492,17 +484,14 @@ export async function fetchItchFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GAMERPOWER  (free public API — no key required)
-// https://www.gamerpower.com/api-read
+// GAMERPOWER
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchGamerPowerFreeGames() {
   const url = 'https://www.gamerpower.com/api/giveaways?platform=pc&type=game&sort-by=date';
 
   const data = await safeJSON(url, {
-    headers: {
-      'Accept': 'application/json',
-    },
+    headers: { 'Accept': 'application/json' },
   });
 
   if (!data || !Array.isArray(data)) {
@@ -540,6 +529,115 @@ export async function fetchGamerPowerFreeGames() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// REDDIT  — r/FreeGameFindings + r/Freegamestuff
+// Uses Reddit's public JSON API (no auth required).
+// Only posts that are flaired/titled as giveaways and posted within 48 hours
+// are included, to avoid stale deals.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Keywords that strongly indicate a real free game post
+const REDDIT_INCLUDE = [
+  'free', 'giveaway', 'giveaways', 'claim', 'grab', 'get', 'steam key',
+  '100% off', 'epic', 'drm-free', 'drm free', 'indiegala', 'humble',
+  'itch.io', 'gog', 'prime gaming',
+];
+
+// Keywords that indicate it's NOT a game giveaway
+const REDDIT_EXCLUDE = [
+  'discussion', 'meta', 'question', 'looking for', 'lf', 'trade',
+  'trading', 'want', 'wtb', 'sold out', 'expired', 'ended', 'over',
+  'no longer', 'not free', 'asking', 'help',
+];
+
+function isValidRedditPost(post) {
+  const title = (post.title ?? '').toLowerCase();
+  const flair = (post.link_flair_text ?? '').toLowerCase();
+
+  // Must be posted within the last 48 hours
+  const ageHours = (Date.now() / 1000 - post.created_utc) / 3600;
+  if (ageHours > 48) return false;
+
+  // Skip if title matches any exclusion keyword
+  if (REDDIT_EXCLUDE.some(w => title.includes(w))) return false;
+
+  // Must match at least one inclusion keyword in title or flair
+  const combined = title + ' ' + flair;
+  if (!REDDIT_INCLUDE.some(w => combined.includes(w))) return false;
+
+  // Skip self-posts with no URL (text-only discussions)
+  if (post.is_self && !post.url?.includes('http')) return false;
+
+  return true;
+}
+
+async function fetchSubreddit(subreddit) {
+  const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=50`;
+  const data = await safeJSON(url, {
+    headers: {
+      'User-Agent': 'FreeGameNotifier/1.0 (Discord Bot)',
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!data) return [];
+
+  const posts = data?.data?.children ?? [];
+  const games = [];
+
+  for (const child of posts) {
+    const post = child.data;
+    if (!post || post.stickied) continue;
+    if (!isValidRedditPost(post)) continue;
+
+    // Use the post's external URL if it links out, otherwise the Reddit thread
+    const claimUrl = (!post.is_self && post.url && !post.url.includes('reddit.com'))
+      ? post.url
+      : `https://www.reddit.com${post.permalink}`;
+
+    // Clean up title — strip common reddit formatting noise
+    const title = post.title
+      .replace(/\[.*?\]/g, '')   // remove [tags]
+      .replace(/\(.*?\)/g, '')   // remove (platform notes)
+      .trim()
+      || post.title;
+
+    games.push({
+      id: `reddit-${post.id}`,
+      platform: `Reddit r/${subreddit}`,
+      platformEmoji: '🟠',
+      title: post.title.trim(),
+      url: claimUrl,
+      freeUntil: null,
+      imageUrl: post.thumbnail?.startsWith('http') ? post.thumbnail : null,
+      isUpcoming: false,
+      rating: null,
+      metacritic: null,
+      multiplayer: null,
+    });
+  }
+
+  return games;
+}
+
+export async function fetchRedditFreeGames() {
+  const subreddits = ['FreeGameFindings', 'Freegamestuff'];
+  const seen = new Set();
+  const games = [];
+
+  for (const sub of subreddits) {
+    const posts = await fetchSubreddit(sub);
+    for (const game of posts) {
+      if (seen.has(game.id)) continue;
+      seen.add(game.id);
+      games.push(game);
+    }
+  }
+
+  console.log(`[Reddit] ${games.length} free game post(s)`);
+  return games;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Master aggregator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -555,6 +653,7 @@ export async function fetchAllFreeGames() {
     { name: 'IndieGala',     fn: fetchIndieGalaFreeGames },
     { name: 'Itch.io',       fn: fetchItchFreeGames },
     { name: 'GamerPower',    fn: fetchGamerPowerFreeGames },
+    { name: 'Reddit',        fn: fetchRedditFreeGames },
   ];
 
   const results = await Promise.allSettled(
