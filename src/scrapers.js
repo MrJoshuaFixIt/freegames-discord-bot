@@ -471,8 +471,9 @@ export async function fetchRedditFreeGames() {
   const seen = new Set();
   const games = [];
 
-  for (const sub of subreddits) {
-    const posts = await fetchSubredditRSS(sub);
+  for (let i = 0; i < subreddits.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 3000));
+    const posts = await fetchSubredditRSS(subreddits[i]);
     for (const game of posts) {
       if (seen.has(game.id)) continue;
       seen.add(game.id);
