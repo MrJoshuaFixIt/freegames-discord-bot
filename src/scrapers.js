@@ -51,12 +51,18 @@ async function safeJSON(url, options = {}) {
 
 async function fetchGameDetails(title) {
   const key = process.env.RAWG_API_KEY;
-  if (!key) return { rating: null, metacritic: null, multiplayer: null };
+  // Skip if no key or key is still the placeholder
+  if (!key || key === 'your_rawg_api_key_here') {
+    return { rating: null, metacritic: null, multiplayer: null };
+  }
 
   try {
     const search = await safeJSON(
       `https://api.rawg.io/api/games?key=${key}&search=${encodeURIComponent(title)}&page_size=1`
     );
+    // If we got null back (e.g. 401/403), just return empty
+    if (!search) return { rating: null, metacritic: null, multiplayer: null };
+
     const game = search?.results?.[0];
     if (!game) return { rating: null, metacritic: null, multiplayer: null };
 
@@ -385,7 +391,9 @@ export async function fetchGamerPowerFreeGames() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REDDIT — r/FreeGameFindings + r/Freegamestuff
-// Uses old.reddit.com which allows unauthenticated JSON access from servers.
+// Uses www.reddit.com JSON API with a descriptive bot User-Agent.
+// old.reddit.com now also blocks server IPs; www.reddit.com JSON still works
+// without OAuth for read-only listing endpoints.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REDDIT_EXCLUDE = [
@@ -416,11 +424,13 @@ function isValidRedditPost(post) {
 }
 
 async function fetchSubreddit(subreddit) {
-  // old.reddit.com still serves unauthenticated JSON without rate-limiting bots
-  const url = `https://old.reddit.com/r/${subreddit}/new.json?limit=50`;
+  // www.reddit.com JSON endpoints work from server IPs without OAuth.
+  // Must use a unique descriptive User-Agent per Reddit API rules — generic
+  // browser UAs are rate-limited or blocked.
+  const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=50`;
   const data = await safeJSON(url, {
     headers: {
-      'User-Agent': 'FreeGameNotifier:v1.0 (Discord bot; contact via GitHub)',
+      'User-Agent': 'FreeGameNotifier/1.0 (Discord bot; +https://github.com/MrJoshuaFixIt/freegames-discord-bot)',
       'Accept': 'application/json',
     },
   });
